@@ -67,4 +67,9 @@ while True:
     cv2.imshow("Frame", frame)
 
     # Break the loop if the user presses the 'q' key
-    if cv2.waitKey(1) & 0xFF ==
+     if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release the camera and close all windows
+cap.release()
+cv2.destroyAllWindows()
