@@ -13,10 +13,6 @@ overlay = cv2.imread("shirt.png", cv2.IMREAD_UNCHANGED)
 shoulder_keypoints = [mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.RIGHT_SHOULDER]
 torso_keypoints = [mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.RIGHT_HIP]
 
-# Define the width and height of the overlay based on the keypoints
-width = 0
-height = 0
-
 # Open the camera
 cap = cv2.VideoCapture(0)
 
@@ -24,6 +20,8 @@ cap = cv2.VideoCapture(0)
 while True:
     # Read the frame from the camera
     ret, frame = cap.read()
+    if not ret:
+        break
 
     # Convert the frame to RGB format
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -37,26 +35,30 @@ while True:
         shoulder_points = []
         torso_points = []
         for keypoint in shoulder_keypoints:
-            shoulder_points.append((results.pose_landmarks.landmark[keypoint].x, results.pose_landmarks.landmark[keypoint].y))
+            lm = results.pose_landmarks.landmark[keypoint]
+            shoulder_points.append((int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])))
         for keypoint in torso_keypoints:
-            torso_points.append((results.pose_landmarks.landmark[keypoint].x, results.pose_landmarks.landmark[keypoint].y))
+            lm = results.pose_landmarks.landmark[keypoint]
+            torso_points.append((int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])))
 
         # Calculate the width and height of the overlay based on the keypoints
         width = int(np.linalg.norm(np.array(shoulder_points[0]) - np.array(shoulder_points[1])) * 2)
         height = int(np.linalg.norm(np.array(torso_points[0]) - np.array(torso_points[1])) * 2)
 
         # Calculate the transformation matrix to warp the overlay
-        src_points = np.array(shoulder_points + torso_points, dtype=np.float32).reshape((-1, 1, 2))
-        dst_points = np.array([[0, 0], [width, 0], [0, height], [width, height]], dtype=np.float32).reshape((-1, 1, 2))
-        M = cv2.getPerspectiveTransform(src_points, dst_points)
+        src_points = np.array(shoulder_points + torso_points, dtype=np.float32)
+        dst_points = np.array([[0, 0], [width, 0], [0, height], [width, height]], dtype=np.float32)
+        if len(src_points) == 4:
+            M = cv2.getPerspectiveTransform(src_points, dst_points)
 
-        # Warp the overlay to fit the person's body shape
-        overlay_warped = cv2.warpPerspective(overlay, M, (width, height))
+            # Warp the overlay to fit the person's body shape
+            overlay_warped = cv2.warpPerspective(overlay, M, (width, height))
 
-        # Blend the overlay with the original frame
-        alpha = 0.5
-        mask = overlay_warped[:, :, 3] / 255.0
-        frame = cv2.addWeighted(frame, 1 - alpha, overlay_warped[:, :, :3], alpha, 0)
+            # Blend the overlay with the original frame
+            alpha = 0.5
+            mask = overlay_warped[:, :, 3] / 255.0
+            for c in range(0, 3):
+                frame[:, :, c] = frame[:, :, c] * (1 - mask) + overlay_warped[:, :, c] * mask
 
         # Draw the pose keypoints on the frame
         for landmark in results.pose_landmarks.landmark:
@@ -67,7 +69,7 @@ while True:
     cv2.imshow("Frame", frame)
 
     # Break the loop if the user presses the 'q' key
-     if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 # Release the camera and close all windows
