@@ -1,4 +1,3 @@
 build:
-  buildpacks:
-    - heroku/python
-    - heroku-community/apt
+  docker:
+    web: Dockerfile
