@@ -13,6 +13,10 @@ overlay = cv2.imread("shirt.png", cv2.IMREAD_UNCHANGED)
 shoulder_keypoints = [mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.RIGHT_SHOULDER]
 torso_keypoints = [mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.RIGHT_HIP]
 
+# Define the width and height of the overlay based on the keypoints
+width = 0
+height = 0
+
 # Open the camera
 cap = cv2.VideoCapture(0)
 
@@ -20,8 +24,6 @@ cap = cv2.VideoCapture(0)
 while True:
     # Read the frame from the camera
     ret, frame = cap.read()
-    if not ret:
-        break
 
     # Convert the frame to RGB format
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -68,6 +70,6 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release the camera and close all OpenCV windows
+# Release the camera and close all windows
 cap.release()
 cv2.destroyAllWindows()
