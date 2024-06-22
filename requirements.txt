@@ -1,5 +1,7 @@
-Flask
+flask
 flask-socketio
+eventlet
 opencv-python-headless
-numpy
 mediapipe
+numpy
+gunicorn
