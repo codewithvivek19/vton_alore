@@ -1,6 +1,13 @@
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
 import cv2
+import base64
 import numpy as np
 import mediapipe as mp
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret!'
+socketio = SocketIO(app)
 
 # Initialize the pose estimation model
 mp_pose = mp.solutions.pose
@@ -9,22 +16,7 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 # Load the overlay image
 overlay = cv2.imread("shirt.png", cv2.IMREAD_UNCHANGED)
 
-# Define the keypoints for the shoulders and the torso
-shoulder_keypoints = [mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.RIGHT_SHOULDER]
-torso_keypoints = [mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.RIGHT_HIP]
-
-# Define the width and height of the overlay based on the keypoints
-width = 0
-height = 0
-
-# Open the camera
-cap = cv2.VideoCapture(0)
-
-# Process each frame of the video
-while True:
-    # Read the frame from the camera
-    ret, frame = cap.read()
-
+def process_frame(frame):
     # Convert the frame to RGB format
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -34,12 +26,14 @@ while True:
     # Check if the pose was detected
     if results.pose_landmarks:
         # Get the keypoints for the shoulders and the torso
-        shoulder_points = []
-        torso_points = []
-        for keypoint in shoulder_keypoints:
-            shoulder_points.append((results.pose_landmarks.landmark[keypoint].x, results.pose_landmarks.landmark[keypoint].y))
-        for keypoint in torso_keypoints:
-            torso_points.append((results.pose_landmarks.landmark[keypoint].x, results.pose_landmarks.landmark[keypoint].y))
+        shoulder_points = [
+            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y),
+            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y)
+        ]
+        torso_points = [
+            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP].y),
+            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP].y)
+        ]
 
         # Calculate the width and height of the overlay based on the keypoints
         width = int(np.linalg.norm(np.array(shoulder_points[0]) - np.array(shoulder_points[1])) * 2)
@@ -56,20 +50,39 @@ while True:
         # Blend the overlay with the original frame
         alpha = 0.5
         mask = overlay_warped[:, :, 3] / 255.0
-        frame = cv2.addWeighted(frame, 1 - alpha, overlay_warped[:, :, :3], alpha, 0)
+        for c in range(0, 3):
+            frame[:, :, c] = (1 - mask) * frame[:, :, c] + mask * overlay_warped[:, :, c]
 
-        # Draw the pose keypoints on the frame
-        for landmark in results.pose_landmarks.landmark:
-            x, y = int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])
-            cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
+    return frame
 
-    # Display the final frame with the overlay
-    cv2.imshow("Frame", frame)
+def capture_frame():
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
 
-    # Break the loop if the user presses the 'q' key
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    if not ret:
+        return None
 
-# Release the camera and close all windows
-cap.release()
-cv2.destroyAllWindows()
+    processed_frame = process_frame(frame)
+    _, buffer = cv2.imencode('.jpg', processed_frame)
+    frame_base64 = base64.b64encode(buffer).decode('utf-8')
+    return frame_base64
+
+@socketio.on('connect')
+def handle_connect():
+    emit('connected', {'data': 'Connected to the server'})
+
+@socketio.on('capture_frame')
+def handle_capture_frame():
+    frame_base64 = capture_frame()
+    if frame_base64:
+        emit('frame', {'frame': frame_base64})
+    else:
+        emit('frame', {'frame': None})
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=80)
