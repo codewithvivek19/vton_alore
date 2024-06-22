@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Video Feed</title>
+    <style>
+        #video {
+            width: 640px;
+            height: 480px;
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <h1>Real-Time Video Feed</h1>
+    <img id="video" src="" alt="Video Feed">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        socket.on('connected', (data) => {
+            console.log(data.data);
+        });
+
+        socket.on('frame', (data) => {
+            if (data.frame) {
+                document.getElementById('video').src = 'data:image/jpeg;base64,' + data.frame;
+            } else {
+                document.getElementById('video').src = '';
+            }
+        });
+
+        setInterval(() => {
+            socket.emit('capture_frame');
+        }, 100); // Capture a frame every 100 milliseconds
+    </script>
+</body>
+</html>
