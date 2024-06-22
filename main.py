@@ -1,12 +1,11 @@
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
 import cv2
-import base64
 import numpy as np
 import mediapipe as mp
+import base64
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app)
 
 # Initialize the pose estimation model
@@ -16,24 +15,27 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 # Load the overlay image
 overlay = cv2.imread("shirt.png", cv2.IMREAD_UNCHANGED)
 
-def process_frame(frame):
+# Define the keypoints for the shoulders and the torso
+shoulder_keypoints = [mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.RIGHT_SHOULDER]
+torso_keypoints = [mp_pose.PoseLandmark.LEFT_HIP, mp_pose.PoseLandmark.RIGHT_HIP]
+
+@socketio.on('frame')
+def handle_frame(data):
+    # Decode the base64 image
+    frame = base64.b64decode(data)
+    frame = np.frombuffer(frame, dtype=np.uint8)
+    frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+
     # Convert the frame to RGB format
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # Process the frame with the pose estimation model
     results = pose.process(image)
 
-    # Check if the pose was detected
     if results.pose_landmarks:
         # Get the keypoints for the shoulders and the torso
-        shoulder_points = [
-            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y),
-            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y)
-        ]
-        torso_points = [
-            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP].y),
-            (results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP].x, results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP].y)
-        ]
+        shoulder_points = [(results.pose_landmarks.landmark[k].x, results.pose_landmarks.landmark[k].y) for k in shoulder_keypoints]
+        torso_points = [(results.pose_landmarks.landmark[k].x, results.pose_landmarks.landmark[k].y) for k in torso_keypoints]
 
         # Calculate the width and height of the overlay based on the keypoints
         width = int(np.linalg.norm(np.array(shoulder_points[0]) - np.array(shoulder_points[1])) * 2)
@@ -50,35 +52,14 @@ def process_frame(frame):
         # Blend the overlay with the original frame
         alpha = 0.5
         mask = overlay_warped[:, :, 3] / 255.0
-        for c in range(0, 3):
-            frame[:, :, c] = (1 - mask) * frame[:, :, c] + mask * overlay_warped[:, :, c]
+        for c in range(3):
+            frame[:, :, c] = frame[:, :, c] * (1 - mask) + overlay_warped[:, :, c] * mask
 
-    return frame
+    # Encode the frame back to base64
+    _, buffer = cv2.imencode('.jpg', frame)
+    frame = base64.b64encode(buffer).decode('utf-8')
 
-def capture_frame():
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret:
-        return None
-
-    processed_frame = process_frame(frame)
-    _, buffer = cv2.imencode('.jpg', processed_frame)
-    frame_base64 = base64.b64encode(buffer).decode('utf-8')
-    return frame_base64
-
-@socketio.on('connect')
-def handle_connect():
-    emit('connected', {'data': 'Connected to the server'})
-
-@socketio.on('capture_frame')
-def handle_capture_frame():
-    frame_base64 = capture_frame()
-    if frame_base64:
-        emit('frame', {'frame': frame_base64})
-    else:
-        emit('frame', {'frame': None})
+    emit('response_frame', {'frame': frame})
 
 @app.route('/')
 def index():
