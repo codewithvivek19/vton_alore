@@ -1,21 +1,24 @@
-# Use an official Python runtime as a parent image
+# Use the official Python image as a base image
 FROM python:3.9-slim
 
-# Set the working directory in the container
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=main.py
+
+# Create a working directory
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Copy the requirements file
+COPY requirements.txt /app/
 
-# Install any needed packages specified in requirements.txt
+# Install the required packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional dependencies for OpenCV
-RUN apt-get update && apt-get install -y \
-    libsm6 libxext6 libxrender-dev
+# Copy the application code
+COPY . /app/
 
-# Make port 80 available to the world outside this container
+# Expose the port the app runs on
 EXPOSE 80
 
-# Run main.py when the container launches
-CMD ["python", "main.py"]
+# Start the Flask app using gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "main:app", "--worker-class", "eventlet", "-w", "1"]
